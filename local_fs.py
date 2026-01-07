@@ -55,3 +55,17 @@ class LocalFileSystem:
         except Exception:
             pass
         return False
+
+    def get_selected_file(self, filename: str) -> str:
+        """Get the full path of a selected file"""
+        try:
+            file_path = self.current_folder / filename
+            if file_path.is_file():
+                return str(file_path)
+        except Exception:
+            pass
+        return None
+
+    def get_full_path(self) -> str:
+        """Get the current folder path as string"""
+        return str(self.current_folder)

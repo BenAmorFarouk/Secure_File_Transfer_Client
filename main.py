@@ -104,10 +104,59 @@ class SFTPApp:
         self.gui.log("Disconnected.")
 
     def upload(self):
-        self.gui.log("Upload: Not implemented")
+        if not self.remote_sftp.is_connected():
+            self.gui.log("Not connected to remote server")
+            return
+        
+        filename = self.gui.get_selected_local_file()
+        if not filename:
+            self.gui.log("No local file selected. Double-click a local file to select it.")
+            return
+        
+        local_path = self.local_fs.get_selected_file(filename)
+        if not local_path:
+            self.gui.log(f"File not found: {filename}")
+            return
+        
+        def _upload_thread():
+            success = self.remote_sftp.upload_file(local_path, filename)
+            self.root.after(0, lambda: self._on_upload_result(success, filename))
+        
+        self.gui.log(f"Uploading {filename}...")
+        threading.Thread(target=_upload_thread, daemon=True).start()
+    
+    def _on_upload_result(self, success: bool, filename: str):
+        if success:
+            self.gui.log(f"Successfully uploaded {filename}")
+            self._refresh_remote()
+        else:
+            self.gui.log(f"Failed to upload {filename}")
 
     def download(self):
-        self.gui.log("Download: Not implemented")
+        if not self.remote_sftp.is_connected():
+            self.gui.log("Not connected to remote server")
+            return
+        
+        filename = self.gui.get_selected_remote_file()
+        if not filename:
+            self.gui.log("No remote file selected. Double-click a remote file to select it.")
+            return
+        
+        local_path = f"{self.local_fs.get_full_path()}/{filename}"
+        
+        def _download_thread():
+            success = self.remote_sftp.download_file(filename, local_path)
+            self.root.after(0, lambda: self._on_download_result(success, filename))
+        
+        self.gui.log(f"Downloading {filename}...")
+        threading.Thread(target=_download_thread, daemon=True).start()
+    
+    def _on_download_result(self, success: bool, filename: str):
+        if success:
+            self.gui.log(f"Successfully downloaded {filename}")
+            self._refresh_local()
+        else:
+            self.gui.log(f"Failed to download {filename}")
 
     def run(self):
         self.root.mainloop()
