@@ -85,12 +85,12 @@ class SFTPInterface:
         # Action buttons
         btn_frame = ctk.CTkFrame(main_frame, width=120)
         btn_frame.grid(row=0, column=1, padx=6)
-        btn_frame.pack_propagate(False)
 
-        self.download_btn = ctk.CTkButton(btn_frame, text="Download", width=100, height=60, state="disabled", command=self._on_download)
-        self.download_btn.pack(pady=(80, 10))
 
-        self.upload_btn = ctk.CTkButton(btn_frame, text="Upload", width=100, height=60, state="disabled", command=self._on_upload)
+        self.download_btn = ctk.CTkButton(btn_frame, text="Download", width=100, height=40, state="disabled", command=self._on_download)
+        self.download_btn.pack(pady=10)
+
+        self.upload_btn = ctk.CTkButton(btn_frame, text="Upload", width=100, height=40, state="disabled", command=self._on_upload)
         self.upload_btn.pack(pady=10)
 
         # Remote side
