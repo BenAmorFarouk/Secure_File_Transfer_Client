@@ -8,6 +8,8 @@ class SFTPInterface:
         self.on_disconnect_callback: Optional[Callable] = None
         self.on_upload_callback: Optional[Callable] = None
         self.on_download_callback: Optional[Callable] = None
+        self.selected_local_file: Optional[str] = None
+        self.selected_remote_file: Optional[str] = None
         self._build_ui()
 
     def _build_ui(self):
@@ -48,7 +50,7 @@ class SFTPInterface:
         main_frame.pack(fill="both", expand=True, padx=15, pady=(0, 12))
         main_frame.grid_rowconfigure(0, weight=1)
         main_frame.grid_columnconfigure(0, weight=1, minsize=450)
-        main_frame.grid_columnconfigure(1, weight=0, minsize=100)
+        main_frame.grid_columnconfigure(1, weight=0, minsize=120)
         main_frame.grid_columnconfigure(2, weight=1, minsize=450)
 
         # Local side
@@ -78,17 +80,18 @@ class SFTPInterface:
         self.local_files = ctk.CTkTextbox(local_files_section, font=("Consolas", 11), wrap="none")
         self.local_files.grid(row=1, column=0, sticky="nsew", padx=2, pady=(0, 4))
         self.local_files.bind("<Double-Button-1>", self._on_local_file_double_click)
+        self.local_files.bind("<ButtonRelease-1>", self._on_local_file_click)
 
         # Action buttons
-        btn_frame = ctk.CTkFrame(main_frame, width=100)
+        btn_frame = ctk.CTkFrame(main_frame, width=120)
         btn_frame.grid(row=0, column=1, padx=6)
-        btn_frame.pack_propagate(False)
 
-        self.upload_btn = ctk.CTkButton(btn_frame, text="Upload", width=90, height=60, state="disabled", command=self._on_upload)
-        self.upload_btn.pack(pady=(100, 20))
 
-        self.download_btn = ctk.CTkButton(btn_frame, text="Download", width=90, height=60, state="disabled", command=self._on_download)
-        self.download_btn.pack(pady=20)
+        self.download_btn = ctk.CTkButton(btn_frame, text="Download", width=100, height=40, state="disabled", command=self._on_download)
+        self.download_btn.pack(pady=10)
+
+        self.upload_btn = ctk.CTkButton(btn_frame, text="Upload", width=100, height=40, state="disabled", command=self._on_upload)
+        self.upload_btn.pack(pady=10)
 
         # Remote side
         remote_frame = ctk.CTkFrame(main_frame)
@@ -117,6 +120,7 @@ class SFTPInterface:
         self.remote_files = ctk.CTkTextbox(remote_files_section, font=("Consolas", 11), wrap="none")
         self.remote_files.grid(row=1, column=0, sticky="nsew", padx=2, pady=(0, 4))
         self.remote_files.bind("<Double-Button-1>", self._on_remote_file_double_click)
+        self.remote_files.bind("<ButtonRelease-1>", self._on_remote_file_click)
 
         # Log
         ctk.CTkLabel(self.root, text="Log", font=("Segoe UI", 12, "bold"), anchor="w").pack(fill="x", padx=15, pady=(0, 2))
@@ -210,11 +214,47 @@ class SFTPInterface:
         except Exception as e:
             self.log(f"Remote folder click error: {e}")
 
+    def _on_local_file_click(self, event):
+        try:
+            index = self.local_files.index(f"@{event.x},{event.y}")
+            line_num = int(index.split(".")[0])
+            line = self.local_files.get(f"{line_num}.0", f"{line_num}.end").strip()
+            if not line or not line.startswith("[FILE]"):
+                self.selected_local_file = None
+                return
+            # Extract filename from "[FILE] filename size" format
+            parts = line.strip().split()
+            if len(parts) >= 2:
+                self.selected_local_file = parts[1]
+                self.log(f"Selected local file: {self.selected_local_file}")
+        except Exception as e:
+            self.log(f"Local file click error: {e}")
+
+    def _on_remote_file_click(self, event):
+        try:
+            index = self.remote_files.index(f"@{event.x},{event.y}")
+            line_num = int(index.split(".")[0])
+            line = self.remote_files.get(f"{line_num}.0", f"{line_num}.end").strip()
+            if not line or not line.startswith("[FILE]"):
+                self.selected_remote_file = None
+                return
+            # Extract filename from "[FILE] filename size" format
+            parts = line.strip().split()
+            if len(parts) >= 2:
+                self.selected_remote_file = parts[1]
+                self.log(f"Selected remote file: {self.selected_remote_file}")
+        except Exception as e:
+            self.log(f"Remote file click error: {e}")
+
     def _on_local_file_double_click(self, event):
-        pass
+        filename = self.get_selected_local_file()
+        if filename and hasattr(self, '_on_local_file_select'):
+            self._on_local_file_select(filename)
 
     def _on_remote_file_double_click(self, event):
-        pass
+        filename = self.get_selected_remote_file()
+        if filename and hasattr(self, '_on_remote_file_select'):
+            self._on_remote_file_select(filename)
 
     def _human_size(self, size_bytes: int) -> str:
         if size_bytes == 0:
@@ -225,3 +265,11 @@ class SFTPInterface:
             size_bytes /= 1024.0
             i += 1
         return f"{size_bytes:.1f} {units[i]}"
+
+    def get_selected_local_file(self) -> str:
+        """Get the currently selected local file"""
+        return self.selected_local_file
+
+    def get_selected_remote_file(self) -> str:
+        """Get the currently selected remote file"""
+        return self.selected_remote_file

@@ -83,3 +83,23 @@ class RemoteSFTP:
             return True
         except Exception:
             return False
+
+    def upload_file(self, local_path: str, remote_filename: str) -> bool:
+        """Upload a file from local path to remote server"""
+        if not self.sftp:
+            return False
+        try:
+            self.sftp.put(local_path, f"{self.current_path.rstrip('/')}/{remote_filename}")
+            return True
+        except Exception:
+            return False
+
+    def download_file(self, remote_filename: str, local_path: str) -> bool:
+        """Download a file from remote server to local path"""
+        if not self.sftp:
+            return False
+        try:
+            self.sftp.get(f"{self.current_path.rstrip('/')}/{remote_filename}", local_path)
+            return True
+        except Exception:
+            return False
