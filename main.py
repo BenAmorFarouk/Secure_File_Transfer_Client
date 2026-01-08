@@ -1,13 +1,15 @@
 import customtkinter as ctk
 import threading
+import os
 from gui import SFTPInterface
 from local_fs import LocalFileSystem
 from remote_sftp import RemoteSFTP
 
+
 class SFTPApp:
     def __init__(self):
         self.root = ctk.CTk()
-        self.root.title("SFTP Client")
+        self.root.title("Secure SFTP Client")
         self.root.geometry("1280x720")
 
         self.local_fs = LocalFileSystem()
@@ -18,7 +20,8 @@ class SFTPApp:
 
         self._refresh_local()
         self._refresh_remote()
-        self.gui.log("Ready. Enter credentials and connect.")
+        self.gui.log("Ready. Enter credentials and connect securely.")
+        self.remote_sftp.ask_trust_callback = self.gui.ask_trust_host
 
     def _bind_events(self):
         self.gui.on_connect_callback = self.connect
@@ -79,10 +82,16 @@ class SFTPApp:
             self.gui.log("Port must be a number.")
             return
 
+        # Optional: support private key file authentication
+        key_file = creds.get("key_path", None)
+        password = creds["password"]
+
         def _connect_thread():
             success = self.remote_sftp.connect(
-                creds["host"], port, creds["user"], creds["password"]
+                creds["host"], port, creds["user"], password, key_filename=key_file
             )
+            # Clear password from memory after use
+            del creds["password"]
             self.root.after(0, lambda: self._on_connect_result(success))
 
         self.gui.connect_btn.configure(state="disabled")
@@ -92,39 +101,39 @@ class SFTPApp:
         if success:
             self.gui.set_connected(True)
             self._refresh_remote()
-            self.gui.log("Connected to remote server.")
+            self.gui.log("Secure connection established.")
         else:
-            self.gui.log("Connection failed. Check credentials & server.")
+            self.gui.log("Connection failed. Check credentials & server host key.")
             self.gui.connect_btn.configure(state="normal")
 
     def disconnect(self):
         self.remote_sftp.disconnect()
         self.gui.set_connected(False)
         self._refresh_remote()
-        self.gui.log("Disconnected.")
+        self.gui.log("Disconnected securely.")
 
     def upload(self):
         if not self.remote_sftp.is_connected():
             self.gui.log("Not connected to remote server")
             return
-        
+
         filename = self.gui.get_selected_local_file()
         if not filename:
             self.gui.log("No local file selected. Double-click a local file to select it.")
             return
-        
+
         local_path = self.local_fs.get_selected_file(filename)
         if not local_path:
             self.gui.log(f"File not found: {filename}")
             return
-        
+
         def _upload_thread():
             success = self.remote_sftp.upload_file(local_path, filename)
             self.root.after(0, lambda: self._on_upload_result(success, filename))
-        
-        self.gui.log(f"Uploading {filename}...")
+
+        self.gui.log(f"Uploading {filename} securely...")
         threading.Thread(target=_upload_thread, daemon=True).start()
-    
+
     def _on_upload_result(self, success: bool, filename: str):
         if success:
             self.gui.log(f"Successfully uploaded {filename}")
@@ -136,21 +145,21 @@ class SFTPApp:
         if not self.remote_sftp.is_connected():
             self.gui.log("Not connected to remote server")
             return
-        
+
         filename = self.gui.get_selected_remote_file()
         if not filename:
             self.gui.log("No remote file selected. Double-click a remote file to select it.")
             return
-        
-        local_path = f"{self.local_fs.get_full_path()}/{filename}"
-        
+
+        local_path = os.path.join(self.local_fs.get_full_path(), filename)
+
         def _download_thread():
             success = self.remote_sftp.download_file(filename, local_path)
             self.root.after(0, lambda: self._on_download_result(success, filename))
-        
-        self.gui.log(f"Downloading {filename}...")
+
+        self.gui.log(f"Downloading {filename} securely...")
         threading.Thread(target=_download_thread, daemon=True).start()
-    
+
     def _on_download_result(self, success: bool, filename: str):
         if success:
             self.gui.log(f"Successfully downloaded {filename}")
@@ -160,6 +169,7 @@ class SFTPApp:
 
     def run(self):
         self.root.mainloop()
+
 
 if __name__ == "__main__":
     app = SFTPApp()

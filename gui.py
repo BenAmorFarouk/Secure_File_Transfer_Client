@@ -273,3 +273,36 @@ class SFTPInterface:
     def get_selected_remote_file(self) -> str:
         """Get the currently selected remote file"""
         return self.selected_remote_file
+
+    def ask_trust_host(self, host: str, fingerprint: str) -> bool:
+        """Show a modal dialog asking user to trust an unknown host. Returns True if user clicks Yes."""
+        result = {"trust": False}  # mutable container to get result
+
+        def on_yes():
+            result["trust"] = True
+            dialog.destroy()
+
+        def on_no():
+            result["trust"] = False
+            dialog.destroy()
+
+        dialog = ctk.CTkToplevel(self.root)
+        dialog.title("Unknown Host Key")
+        dialog.geometry("400x200")
+        dialog.grab_set()  # makes it modal
+
+        label = ctk.CTkLabel(
+            dialog,
+            text=f"Unknown host: {host}\nFingerprint: {fingerprint}\n\nTrust this server and add to known_hosts?",
+            wraplength=380
+        )
+        label.pack(padx=20, pady=20)
+
+        btn_frame = ctk.CTkFrame(dialog)
+        btn_frame.pack(pady=10)
+
+        ctk.CTkButton(btn_frame, text="Yes", command=on_yes).pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame, text="No", command=on_no).pack(side="left", padx=10)
+
+        dialog.wait_window()
+        return result["trust"]
