@@ -14,6 +14,8 @@ class SFTPInterface:
         self.on_view_remote_file_callback: Optional[Callable] = None
         self.selected_local_file: Optional[str] = None
         self.selected_remote_file: Optional[str] = None
+        self.local_file_names: list[str] = []
+        self.remote_file_names: list[str] = []
         self._build_ui()
 
     def _build_ui(self):
@@ -189,6 +191,7 @@ class SFTPInterface:
         self.local_tree.configure(state="disabled")
 
     def update_local_files(self, files: list):
+        self.local_file_names = [name for name, _ in files]
         self.local_files.configure(state="normal")
         self.local_files.delete("0.0", "end")
         for name, size in files:
@@ -202,6 +205,7 @@ class SFTPInterface:
         self.remote_tree.configure(state="disabled")
 
     def update_remote_files(self, files: list):
+        self.remote_file_names = [name for name, _ in files]
         self.remote_files.configure(state="normal")
         self.remote_files.delete("0.0", "end")
         for name, size in files:
@@ -265,10 +269,9 @@ class SFTPInterface:
             if not line or not line.startswith("[FILE]"):
                 self.selected_local_file = None
                 return
-            # Extract filename from "[FILE] filename size" format
-            parts = line.strip().split()
-            if len(parts) >= 2:
-                self.selected_local_file = parts[1]
+            index = line_num - 1
+            if 0 <= index < len(self.local_file_names):
+                self.selected_local_file = self.local_file_names[index]
                 self.log(f"Selected local file: {self.selected_local_file}")
         except Exception as e:
             self.log(f"Local file click error: {e}")
@@ -281,10 +284,9 @@ class SFTPInterface:
             if not line or not line.startswith("[FILE]"):
                 self.selected_remote_file = None
                 return
-            # Extract filename from "[FILE] filename size" format
-            parts = line.strip().split()
-            if len(parts) >= 2:
-                self.selected_remote_file = parts[1]
+            index = line_num - 1
+            if 0 <= index < len(self.remote_file_names):
+                self.selected_remote_file = self.remote_file_names[index]
                 self.log(f"Selected remote file: {self.selected_remote_file}")
         except Exception as e:
             self.log(f"Remote file click error: {e}")

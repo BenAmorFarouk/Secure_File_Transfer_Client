@@ -21,7 +21,8 @@ class SFTPApp:
         self._refresh_local()
         self._refresh_remote()
         self.gui.log("Ready. Enter credentials and connect securely.")
-        self.remote_sftp.ask_trust_callback = self.gui.ask_trust_host
+        self.remote_sftp.ask_trust_callback = self._ask_trust_host
+        self.remote_sftp.log_callback = self.gui.log
 
     def _bind_events(self):
         self.gui.on_connect_callback = self.connect
@@ -32,6 +33,21 @@ class SFTPApp:
         self.gui.on_view_remote_file_callback = self.view_remote_file
         self.gui._on_local_folder_select = self._local_folder_selected
         self.gui._on_remote_folder_select = self._remote_folder_selected
+
+    def _ask_trust_host(self, host: str, fingerprint: str) -> bool:
+        """Run the trust dialog on the main GUI thread and wait for user input."""
+        result = {"value": False}
+        event = threading.Event()
+
+        def ask():
+            try:
+                result["value"] = self.gui.ask_trust_host(host, fingerprint)
+            finally:
+                event.set()
+
+        self.root.after(0, ask)
+        event.wait()
+        return result["value"]
 
     def _refresh_local(self):
         folders = self.local_fs.get_folders()
@@ -75,13 +91,23 @@ class SFTPApp:
 
     def connect(self):
         creds = self.gui.get_credentials()
-        if not all([creds["host"], creds["port"], creds["user"]]):
+        host = creds["host"].strip()
+        user = creds["user"].strip()
+        if not host or not user or not creds["port"]:
             self.gui.log("Host, port, and user required.")
+            return
+        if any(c.isspace() for c in host):
+            self.gui.log("Host may not contain whitespace.")
+            return
+        if any(c.isspace() for c in user):
+            self.gui.log("Username may not contain whitespace.")
             return
         try:
             port = int(creds["port"])
+            if port < 1 or port > 65535:
+                raise ValueError()
         except ValueError:
-            self.gui.log("Port must be a number.")
+            self.gui.log("Port must be a number between 1 and 65535.")
             return
 
         key_file = creds.get("key_path", None)
@@ -93,15 +119,25 @@ class SFTPApp:
         else:
             self.gui.log("Using password authentication.")
 
-        def _connect_thread(password=password):
-            success = self.remote_sftp.connect(
-                creds["host"], port, creds["user"], password, key_filename=key_file
-            )
+        password_bytes = password.encode("utf-8") if password else None
+
+        def _connect_thread(password_bytes):
+            password_str = password_bytes.decode("utf-8") if password_bytes else None
+            success = False
+            try:
+                success = self.remote_sftp.connect(
+                    host, port, user, password_str, key_filename=key_file
+                )
+            finally:
+                if password_bytes is not None:
+                    for i in range(len(password_bytes)):
+                        password_bytes[i] = 0
             self.root.after(0, lambda: self._on_connect_result(success))
 
         creds["password"] = None
+        password = None
         self.gui.connect_btn.configure(state="disabled")
-        threading.Thread(target=_connect_thread, daemon=True).start()
+        threading.Thread(target=_connect_thread, args=(password_bytes,), daemon=True).start()
 
     def _on_connect_result(self, success: bool):
         if success:
