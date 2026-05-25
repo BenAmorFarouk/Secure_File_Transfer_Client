@@ -119,7 +119,7 @@ class SFTPApp:
         else:
             self.gui.log("Using password authentication.")
 
-        password_bytes = password.encode("utf-8") if password else None
+        password_bytes = bytearray(password.encode("utf-8")) if password else None
 
         def _connect_thread(password_bytes):
             password_str = password_bytes.decode("utf-8") if password_bytes else None
