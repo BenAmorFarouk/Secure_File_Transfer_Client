@@ -84,18 +84,22 @@ class SFTPApp:
             self.gui.log("Port must be a number.")
             return
 
-        # Optional: support private key file authentication
         key_file = creds.get("key_path", None)
         password = creds["password"]
+        self.gui.clear_password()
 
-        def _connect_thread():
+        if key_file:
+            self.gui.log("Using SSH private key authentication.")
+        else:
+            self.gui.log("Using password authentication.")
+
+        def _connect_thread(password=password):
             success = self.remote_sftp.connect(
                 creds["host"], port, creds["user"], password, key_filename=key_file
             )
-            # Clear password from memory after use
-            del creds["password"]
             self.root.after(0, lambda: self._on_connect_result(success))
 
+        creds["password"] = None
         self.gui.connect_btn.configure(state="disabled")
         threading.Thread(target=_connect_thread, daemon=True).start()
 
@@ -111,6 +115,7 @@ class SFTPApp:
     def disconnect(self):
         self.remote_sftp.disconnect()
         self.gui.set_connected(False)
+        self.gui.clear_password()
         self._refresh_remote()
         self.gui.log("Disconnected securely.")
 

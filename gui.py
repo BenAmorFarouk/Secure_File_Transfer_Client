@@ -1,5 +1,7 @@
 import customtkinter as ctk
 from typing import Callable, Optional
+from PIL import Image
+import os
 
 class SFTPInterface:
     def __init__(self, root: ctk.CTk):
@@ -15,37 +17,60 @@ class SFTPInterface:
         self._build_ui()
 
     def _build_ui(self):
-        # Header
-        self.header_frame = ctk.CTkFrame(self.root, height=60)
+        # Header with Logo
+        self.header_frame = ctk.CTkFrame(self.root, height=80)
         self.header_frame.pack(fill="x", padx=15, pady=(15, 8))
         self.header_frame.pack_propagate(False)
-        self.header_frame.grid_columnconfigure(1, weight=1)
-        self.header_frame.grid_columnconfigure(5, weight=1)
+        
+        # Logo on the left
+        logo_frame = ctk.CTkFrame(self.header_frame, fg_color="transparent")
+        logo_frame.grid(row=0, column=0, padx=(0, 15), pady=10, sticky="w")
+        
+        try:
+            # Load and display the high-resolution logo
+            logo_path = os.path.join(os.path.dirname(__file__), "high-resolution-color-logo.png")
+            if os.path.exists(logo_path):
+                logo_image = Image.open(logo_path)
+                logo_image.thumbnail((60, 60), Image.Resampling.LANCZOS)
+                self.logo_photo = ctk.CTkImage(light_image=logo_image, dark_image=logo_image, size=(60, 60))
+                logo_label = ctk.CTkLabel(logo_frame, image=self.logo_photo, text="")
+                logo_label.pack()
+        except Exception as e:
+            print(f"Could not load logo: {e}")
+        
+        # Connection form frame (rest of header)
+        self.header_frame.grid_columnconfigure(2, weight=1)
+        self.header_frame.grid_columnconfigure(6, weight=1)
+        self.header_frame.grid_columnconfigure(8, weight=1)
 
-        ctk.CTkLabel(self.header_frame, text="Host:", font=("Segoe UI", 13)).grid(row=0, column=0, padx=(10, 5), pady=10, sticky="w")
+        ctk.CTkLabel(self.header_frame, text="Host:", font=("Segoe UI", 13)).grid(row=0, column=1, padx=(10, 5), pady=10, sticky="w")
         self.host_entry = ctk.CTkEntry(self.header_frame, placeholder_text="e.g., 192.168.1.25")
-        self.host_entry.grid(row=0, column=1, padx=5, pady=10, sticky="ew")
+        self.host_entry.grid(row=0, column=2, padx=5, pady=10, sticky="ew")
         self.host_entry.insert(0, "127.0.0.1")
 
-        ctk.CTkLabel(self.header_frame, text="Port:").grid(row=0, column=2, padx=5, pady=10, sticky="w")
+        ctk.CTkLabel(self.header_frame, text="Port:").grid(row=0, column=3, padx=5, pady=10, sticky="w")
         self.port_entry = ctk.CTkEntry(self.header_frame, width=60)
-        self.port_entry.grid(row=0, column=3, padx=5, pady=10)
+        self.port_entry.grid(row=0, column=4, padx=5, pady=10)
         self.port_entry.insert(0, "22")
 
-        ctk.CTkLabel(self.header_frame, text="User:").grid(row=0, column=4, padx=10, pady=10, sticky="w")
+        ctk.CTkLabel(self.header_frame, text="User:").grid(row=0, column=5, padx=10, pady=10, sticky="w")
         self.user_entry = ctk.CTkEntry(self.header_frame)
-        self.user_entry.grid(row=0, column=5, padx=5, pady=10, sticky="ew")
+        self.user_entry.grid(row=0, column=6, padx=5, pady=10, sticky="ew")
         self.user_entry.insert(0, "user")
 
-        ctk.CTkLabel(self.header_frame, text="Pass:").grid(row=0, column=6, padx=10, pady=10, sticky="w")
+        ctk.CTkLabel(self.header_frame, text="Key:").grid(row=0, column=7, padx=10, pady=10, sticky="w")
+        self.key_path_entry = ctk.CTkEntry(self.header_frame, placeholder_text="Optional key file")
+        self.key_path_entry.grid(row=0, column=8, padx=5, pady=10, sticky="ew")
+
+        ctk.CTkLabel(self.header_frame, text="Pass:").grid(row=0, column=9, padx=10, pady=10, sticky="w")
         self.pass_entry = ctk.CTkEntry(self.header_frame, show="•", width=120)
-        self.pass_entry.grid(row=0, column=7, padx=5, pady=10)
+        self.pass_entry.grid(row=0, column=10, padx=5, pady=10)
 
         self.connect_btn = ctk.CTkButton(self.header_frame, text="Connect", width=100, command=self._on_connect)
-        self.connect_btn.grid(row=0, column=8, padx=(10, 5), pady=10)
+        self.connect_btn.grid(row=0, column=11, padx=(10, 5), pady=10)
 
         self.disconnect_btn = ctk.CTkButton(self.header_frame, text="Disconnect", width=100, state="disabled", command=self._on_disconnect)
-        self.disconnect_btn.grid(row=0, column=9, padx=(5, 10), pady=10)
+        self.disconnect_btn.grid(row=0, column=12, padx=(5, 10), pady=10)
 
         # Main area
         main_frame = ctk.CTkFrame(self.root)
@@ -146,8 +171,12 @@ class SFTPInterface:
             "host": self.host_entry.get().strip(),
             "port": self.port_entry.get().strip(),
             "user": self.user_entry.get().strip(),
-            "password": self.pass_entry.get()
+            "password": self.pass_entry.get(),
+            "key_path": self.key_path_entry.get().strip() or None
         }
+
+    def clear_password(self):
+        self.pass_entry.delete(0, "end")
 
     def log(self, msg: str):
         from utils import log_to_widget

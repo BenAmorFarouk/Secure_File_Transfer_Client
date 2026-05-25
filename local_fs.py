@@ -3,6 +3,8 @@ from typing import List, Tuple
 import os
 
 class LocalFileSystem:
+    MAX_PREVIEW_BYTES = 2 * 1024 * 1024
+
     def __init__(self):
         self.current_folder = Path.home()
 
@@ -47,6 +49,8 @@ class LocalFileSystem:
                 if new_path == self.current_folder:
                     return False
             else:
+                if "/" in folder_name or "\\" in folder_name:
+                    return False
                 new_path = self.current_folder / folder_name
 
             if new_path.is_dir():
@@ -59,8 +63,11 @@ class LocalFileSystem:
     def get_selected_file(self, filename: str) -> str:
         """Get the full path of a selected file"""
         try:
-            file_path = self.current_folder / filename
-            if file_path.is_file():
+            filename = os.path.basename(filename.strip())
+            if not filename:
+                return None
+            file_path = (self.current_folder / filename).resolve()
+            if file_path.is_file() and file_path.parent == self.current_folder:
                 return str(file_path)
         except Exception:
             pass
@@ -73,11 +80,16 @@ class LocalFileSystem:
     def read_file_content(self, filename: str) -> str:
         """Read the content of a file. Returns content or error message."""
         try:
-            file_path = self.current_folder / filename
-            if not file_path.is_file():
+            filename = os.path.basename(filename.strip())
+            if not filename:
+                return "Error: invalid filename"
+            file_path = (self.current_folder / filename).resolve()
+            if not file_path.is_file() or file_path.parent != self.current_folder:
                 return f"Error: {filename} is not a file"
-            
-            # Try to read as text first
+
+            size = file_path.stat().st_size
+            if size > self.MAX_PREVIEW_BYTES:
+                return f"File too large to preview ({size} bytes)."
             try:
                 with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                     content = f.read()

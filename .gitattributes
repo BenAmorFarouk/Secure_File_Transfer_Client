@@ -1,0 +1,29 @@
+# Auto detect text files and normalize line endings to LF
+* text=auto
+
+# Python files
+*.py text eol=lf
+*.pyw text eol=lf
+
+# Documentation
+*.md text eol=lf
+*.txt text eol=lf
+
+# Config files
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.spec text eol=lf
+*.bat text eol=crlf
+
+# Binary files
+*.png binary
+*.ico binary
+*.exe binary
+*.dll binary
+*.so binary
+
+# Git config
+.gitattributes text eol=lf
+.gitignore text eol=lf

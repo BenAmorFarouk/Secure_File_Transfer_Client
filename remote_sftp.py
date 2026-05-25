@@ -1,7 +1,7 @@
 import paramiko
 import os
 import posixpath
-from typing import List, Tuple, Optional
+from typing import Callable, List, Tuple, Optional
 
 
 class RemoteSFTP:
@@ -11,6 +11,7 @@ class RemoteSFTP:
         self.current_path = "/"
         self.known_hosts_path = known_hosts_path
         self.ask_trust_callback: Optional[Callable[[str, str], bool]] = None
+        self.max_preview_bytes = 2 * 1024 * 1024  # limit preview to 2 MB
 
     def connect(
         self,
@@ -23,6 +24,7 @@ class RemoteSFTP:
         """Connect securely to an SFTP server with host key verification and optional user trust."""
         try:
             self.ssh = paramiko.SSHClient()
+            self._ensure_known_hosts_permissions()
 
             # Load known_hosts file if exists
             if os.path.exists(self.known_hosts_path):
@@ -33,7 +35,7 @@ class RemoteSFTP:
             # Reject unknown host keys by default
             self.ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
 
-            # Attempt secure SSH connection
+            # Attempt secure SSH connection with timeouts and disabled weak ciphers
             self.ssh.connect(
                 hostname=host,
                 port=port,
@@ -41,8 +43,16 @@ class RemoteSFTP:
                 password=password,
                 key_filename=key_filename,
                 timeout=10,
+                banner_timeout=10,
+                auth_timeout=10,
                 look_for_keys=False,
-                allow_agent=False
+                allow_agent=False,
+                disabled_algorithms={
+                    'cipher': [
+                        '3des-cbc', 'blowfish-cbc', 'cast128-cbc',
+                        'arcfour', 'arcfour128', 'arcfour256'
+                    ]
+                }
             )
 
             self.sftp = self.ssh.open_sftp()
@@ -86,8 +96,16 @@ class RemoteSFTP:
                 password=password,
                 key_filename=key_filename,
                 timeout=10,
+                banner_timeout=10,
+                auth_timeout=10,
                 look_for_keys=False,
-                allow_agent=False
+                allow_agent=False,
+                disabled_algorithms={
+                    'cipher': [
+                        '3des-cbc', 'blowfish-cbc', 'cast128-cbc',
+                        'arcfour', 'arcfour128', 'arcfour256'
+                    ]
+                }
             )
 
             key = temp_client.get_transport().get_remote_server_key()
@@ -109,6 +127,19 @@ class RemoteSFTP:
             return False
         finally:
             temp_client.close()
+
+    def _ensure_known_hosts_permissions(self):
+        """Ensure ~/.ssh and known_hosts are created with secure permissions."""
+        try:
+            known_hosts_dir = os.path.dirname(self.known_hosts_path)
+            if known_hosts_dir:
+                os.makedirs(known_hosts_dir, exist_ok=True)
+                os.chmod(known_hosts_dir, 0o700)
+            if os.path.exists(self.known_hosts_path):
+                os.chmod(self.known_hosts_path, 0o600)
+        except Exception as e:
+            print(f"[!] Could not set known_hosts permissions: {e}")
+
     def _save_known_host_entry(self, host: str, key: paramiko.PKey):
         """Write the host key to known_hosts in OpenSSH format."""
         try:
@@ -116,8 +147,20 @@ class RemoteSFTP:
             with open(self.known_hosts_path, "a", encoding="utf-8") as f:
                 entry = f"{host} {key.get_name()} {key.get_base64()}\n"
                 f.write(entry)
+            os.chmod(self.known_hosts_path, 0o600)
         except Exception as e:
             print(f"[!] Failed to write known_hosts entry: {e}")
+
+    def _join_remote_path(self, filename: str) -> str:
+        """Build a normalized, safe remote file path under the current directory."""
+        sanitized = posixpath.basename(filename.strip())
+        if not sanitized or sanitized in {".", ".."}:
+            raise ValueError("Invalid remote filename")
+
+        if self.current_path == "/":
+            return f"/{sanitized}"
+
+        return posixpath.normpath(posixpath.join(self.current_path, sanitized))
 
     def disconnect(self):
         """Close the SFTP and SSH connections cleanly."""
@@ -175,6 +218,8 @@ class RemoteSFTP:
                 parts = self.current_path.rstrip("/").split("/")
                 new_path = "/".join(parts[:-1]) or "/"
             else:
+                if "/" in folder_name or "\\" in folder_name:
+                    return False
                 new_path = posixpath.normpath(f"{self.current_path}/{folder_name}")
 
             self.sftp.listdir(new_path)
@@ -182,14 +227,14 @@ class RemoteSFTP:
             return True
         except Exception as e:
             print(f"[!] Cannot navigate to {folder_name}: {e}")
-            return False
+        return False
 
     def upload_file(self, local_path: str, remote_filename: str) -> bool:
         """Upload a file with basic integrity check."""
         if not self.sftp:
             return False
         try:
-            remote_path = f"{self.current_path.rstrip('/')}/{remote_filename}"
+            remote_path = self._join_remote_path(remote_filename)
             self.sftp.put(local_path, remote_path)
 
             remote_stat = self.sftp.stat(remote_path)
@@ -208,7 +253,7 @@ class RemoteSFTP:
         if not self.sftp:
             return False
         try:
-            remote_path = f"{self.current_path.rstrip('/')}/{remote_filename}"
+            remote_path = self._join_remote_path(remote_filename)
             self.sftp.get(remote_path, local_path)
 
             remote_stat = self.sftp.stat(remote_path)
@@ -226,11 +271,13 @@ class RemoteSFTP:
         """Read the content of a remote file. Returns content or error message."""
         if not self.sftp:
             return "Error: Not connected to remote server"
-        
+
         try:
-            remote_path = f"{self.current_path.rstrip('/')}/{filename}"
-            
-            # Read the file from remote server
+            remote_path = self._join_remote_path(filename)
+            remote_stat = self.sftp.stat(remote_path)
+            if remote_stat.st_size > self.max_preview_bytes:
+                return f"File too large to preview ({remote_stat.st_size} bytes)."
+
             with self.sftp.file(remote_path, 'r') as f:
                 content = f.read().decode('utf-8', errors='replace')
             return content
