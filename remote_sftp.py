@@ -1,7 +1,12 @@
-import paramiko
+import base64
+import hashlib
+import logging
 import os
+import paramiko
 import posixpath
 from typing import Callable, List, Tuple, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class RemoteSFTP:
@@ -25,17 +30,12 @@ class RemoteSFTP:
         try:
             self.ssh = paramiko.SSHClient()
             self._ensure_known_hosts_permissions()
-
-            # Load known_hosts file if exists
-            if os.path.exists(self.known_hosts_path):
-                self.ssh.load_host_keys(self.known_hosts_path)
-            else:
-                print(f"[!] No known_hosts file found at {self.known_hosts_path}")
+            self._load_known_hosts()
 
             # Reject unknown host keys by default
             self.ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
 
-            # Attempt secure SSH connection with timeouts and disabled weak ciphers
+            # Attempt secure SSH connection with timeouts and disabled legacy algorithms
             self.ssh.connect(
                 hostname=host,
                 port=port,
@@ -51,6 +51,17 @@ class RemoteSFTP:
                     'cipher': [
                         '3des-cbc', 'blowfish-cbc', 'cast128-cbc',
                         'arcfour', 'arcfour128', 'arcfour256'
+                    ],
+                    'mac': [
+                        'hmac-md5', 'hmac-md5-96', 'hmac-sha1', 'hmac-sha1-96'
+                    ],
+                    'kex': [
+                        'diffie-hellman-group1-sha1',
+                        'diffie-hellman-group14-sha1',
+                        'diffie-hellman-group-exchange-sha1'
+                    ],
+                    'pubkeys': [
+                        'ssh-rsa'
                     ]
                 }
             )
@@ -60,11 +71,11 @@ class RemoteSFTP:
             print(f"[+] Connected securely to {host}:{port} as {username}")
             return True
 
-        except paramiko.ssh_exception.BadHostKeyException:
+        except paramiko.BadHostKeyException:
             print("[!] Host key mismatch — possible MITM attack.")
-        except paramiko.ssh_exception.AuthenticationException:
+        except paramiko.AuthenticationException:
             print("[!] Authentication failed — check username, password, or SSH key.")
-        except paramiko.ssh_exception.SSHException as e:
+        except paramiko.SSHException as e:
             if "not found in known_hosts" in str(e).lower() or "unknown server" in str(e).lower():
                 print(f"[?] Unknown host: {host}")
                 if self._attempt_trust_prompt(host, port, username, password, key_filename):
@@ -104,18 +115,33 @@ class RemoteSFTP:
                     'cipher': [
                         '3des-cbc', 'blowfish-cbc', 'cast128-cbc',
                         'arcfour', 'arcfour128', 'arcfour256'
+                    ],
+                    'mac': [
+                        'hmac-md5', 'hmac-md5-96', 'hmac-sha1', 'hmac-sha1-96'
+                    ],
+                    'kex': [
+                        'diffie-hellman-group1-sha1',
+                        'diffie-hellman-group14-sha1',
+                        'diffie-hellman-group-exchange-sha1'
+                    ],
+                    'pubkeys': [
+                        'ssh-rsa'
                     ]
                 }
             )
 
-            key = temp_client.get_transport().get_remote_server_key()
-            fingerprint = ":".join(f"{b:02x}" for b in key.get_fingerprint())
+            transport = temp_client.get_transport()
+            if transport is None:
+                raise RuntimeError("Remote transport unavailable after connection")
+            key = transport.get_remote_server_key()
+            md5_fingerprint = ":".join(f"{b:02x}" for b in key.get_fingerprint())
+            sha256_fingerprint = self._compute_host_key_sha256(key)
 
             if self.ask_trust_callback:
-                decision = self.ask_trust_callback(host, fingerprint)
+                decision = self.ask_trust_callback(host, sha256_fingerprint)
             else:
-                decision = input(f"Trust this server and add to known_hosts? (yes/no): ").strip().lower().startswith(
-                    "y")
+                print(f"Unknown host: {host}\nSHA256: {sha256_fingerprint}\nMD5: {md5_fingerprint}")
+                decision = input(f"Trust this server and add to known_hosts? (yes/no): ").strip().lower().startswith("y")
 
             if decision:
                 self._save_known_host_entry(host, key)
@@ -134,11 +160,27 @@ class RemoteSFTP:
             known_hosts_dir = os.path.dirname(self.known_hosts_path)
             if known_hosts_dir:
                 os.makedirs(known_hosts_dir, exist_ok=True)
-                os.chmod(known_hosts_dir, 0o700)
+                if os.name != "nt":
+                    os.chmod(known_hosts_dir, 0o700)
+                else:
+                    logger.debug("Windows cannot enforce POSIX permissions for %s", known_hosts_dir)
             if os.path.exists(self.known_hosts_path):
-                os.chmod(self.known_hosts_path, 0o600)
+                if os.name != "nt":
+                    os.chmod(self.known_hosts_path, 0o600)
+                else:
+                    logger.debug("Windows cannot enforce POSIX permissions for %s", self.known_hosts_path)
         except Exception as e:
-            print(f"[!] Could not set known_hosts permissions: {e}")
+            logger.warning("Could not set known_hosts permissions: %s", e)
+
+    def _load_known_hosts(self):
+        """Load known_hosts from disk if available."""
+        try:
+            if os.path.exists(self.known_hosts_path):
+                self.ssh.load_host_keys(self.known_hosts_path)
+            else:
+                logger.debug("No known_hosts file found at %s", self.known_hosts_path)
+        except Exception as e:
+            logger.warning("Could not load known_hosts file %s: %s", self.known_hosts_path, e)
 
     def _save_known_host_entry(self, host: str, key: paramiko.PKey):
         """Write the host key to known_hosts in OpenSSH format."""
@@ -147,13 +189,63 @@ class RemoteSFTP:
             with open(self.known_hosts_path, "a", encoding="utf-8") as f:
                 entry = f"{host} {key.get_name()} {key.get_base64()}\n"
                 f.write(entry)
-            os.chmod(self.known_hosts_path, 0o600)
+            if os.name != "nt":
+                os.chmod(self.known_hosts_path, 0o600)
         except Exception as e:
-            print(f"[!] Failed to write known_hosts entry: {e}")
+            logger.warning("Failed to write known_hosts entry: %s", e)
+
+    def _compute_host_key_sha256(self, key: paramiko.PKey) -> str:
+        """Compute a SHA-256 fingerprint for a host key in OpenSSH format."""
+        try:
+            raw = base64.b64decode(key.get_base64())
+            digest = hashlib.sha256(raw).digest()
+            fingerprint = base64.b64encode(digest).decode("ascii").rstrip("=")
+            return f"SHA256:{fingerprint}"
+        except Exception:
+            # Fallback to the legacy MD5-style fingerprint if SHA256 cannot be computed
+            return ":".join(f"{b:02x}" for b in key.get_fingerprint())
+
+    def _compute_sha256(self, path: str, remote: bool = False) -> Optional[str]:
+        """Compute SHA-256 digest for a local or remote file."""
+        try:
+            digest = hashlib.sha256()
+            if remote:
+                with self.sftp.file(path, "rb") as f:
+                    while True:
+                        chunk = f.read(65536)
+                        if not chunk:
+                            break
+                        digest.update(chunk)
+            else:
+                with open(path, "rb") as f:
+                    while chunk := f.read(65536):
+                        digest.update(chunk)
+            return digest.hexdigest()
+        except Exception as e:
+            logger.warning("Integrity check failed for %s: %s", path, e)
+            return None
+
+    def _verify_transfer_integrity(self, local_path: str, remote_path: str) -> bool:
+        local_hash = self._compute_sha256(local_path)
+        remote_hash = self._compute_sha256(remote_path, remote=True)
+        if local_hash is None or remote_hash is None:
+            return False
+        if local_hash != remote_hash:
+            logger.warning("Transfer integrity mismatch: local=%s remote=%s", local_hash, remote_hash)
+            return False
+        return True
 
     def _join_remote_path(self, filename: str) -> str:
         """Build a normalized, safe remote file path under the current directory."""
-        sanitized = posixpath.basename(filename.strip())
+        clean_name = filename.strip()
+        if not clean_name or clean_name in {".", ".."}:
+            raise ValueError("Invalid remote filename")
+        if "/" in clean_name or "\\" in clean_name:
+            raise ValueError("Invalid remote filename")
+        if any(ord(c) < 32 for c in clean_name):
+            raise ValueError("Invalid remote filename")
+
+        sanitized = posixpath.basename(clean_name)
         if not sanitized or sanitized in {".", ".."}:
             raise ValueError("Invalid remote filename")
 
@@ -180,11 +272,12 @@ class RemoteSFTP:
         """Return list of folders in the current remote directory."""
         if not self.sftp:
             return []
+        sftp = self.sftp
         folders = []
         try:
             if self.current_path != "/":
                 folders.append("..")
-            entries = self.sftp.listdir_attr(self.current_path)
+            entries = sftp.listdir_attr(self.current_path)
             for attr in entries:
                 if (attr.st_mode & 0o040000) and not attr.filename.startswith('.'):
                     folders.append(attr.filename)
@@ -197,9 +290,10 @@ class RemoteSFTP:
         """Return list of (filename, size) tuples in the current directory."""
         if not self.sftp:
             return []
+        sftp = self.sftp
         files = []
         try:
-            entries = self.sftp.listdir_attr(self.current_path)
+            entries = sftp.listdir_attr(self.current_path)
             for attr in entries:
                 if not (attr.st_mode & 0o040000) and not attr.filename.startswith('.'):
                     files.append((attr.filename, attr.st_size))
@@ -210,6 +304,9 @@ class RemoteSFTP:
 
     def navigate_to(self, folder_name: str) -> bool:
         """Navigate securely to another directory."""
+        if not self.sftp:
+            return False
+        sftp = self.sftp
         try:
             folder_name = folder_name.strip()
             if folder_name == "..":
@@ -222,7 +319,7 @@ class RemoteSFTP:
                     return False
                 new_path = posixpath.normpath(f"{self.current_path}/{folder_name}")
 
-            self.sftp.listdir(new_path)
+            sftp.listdir(new_path)
             self.current_path = new_path
             return True
         except Exception as e:
@@ -237,10 +334,16 @@ class RemoteSFTP:
             remote_path = self._join_remote_path(remote_filename)
             self.sftp.put(local_path, remote_path)
 
+            local_size = os.path.getsize(local_path)
             remote_stat = self.sftp.stat(remote_path)
-            if os.path.getsize(local_path) != remote_stat.st_size:
+            if local_size != remote_stat.st_size:
                 print("[!] Upload verification failed: file sizes differ.")
                 return False
+
+            if local_size <= self.max_preview_bytes:
+                if not self._verify_transfer_integrity(local_path, remote_path):
+                    print("[!] Upload verification failed: checksum mismatch.")
+                    return False
 
             print(f"[+] Uploaded {remote_filename}")
             return True
@@ -256,10 +359,16 @@ class RemoteSFTP:
             remote_path = self._join_remote_path(remote_filename)
             self.sftp.get(remote_path, local_path)
 
+            local_size = os.path.getsize(local_path)
             remote_stat = self.sftp.stat(remote_path)
-            if os.path.getsize(local_path) != remote_stat.st_size:
+            if local_size != remote_stat.st_size:
                 print("[!] Download verification failed: file sizes differ.")
                 return False
+
+            if local_size <= self.max_preview_bytes:
+                if not self._verify_transfer_integrity(local_path, remote_path):
+                    print("[!] Download verification failed: checksum mismatch.")
+                    return False
 
             print(f"[+] Downloaded {remote_filename}")
             return True
@@ -271,10 +380,11 @@ class RemoteSFTP:
         """Read the content of a remote file. Returns content or error message."""
         if not self.sftp:
             return "Error: Not connected to remote server"
+        sftp = self.sftp
 
         try:
             remote_path = self._join_remote_path(filename)
-            remote_stat = self.sftp.stat(remote_path)
+            remote_stat = sftp.stat(remote_path)
             if remote_stat.st_size > self.max_preview_bytes:
                 return f"File too large to preview ({remote_stat.st_size} bytes)."
 

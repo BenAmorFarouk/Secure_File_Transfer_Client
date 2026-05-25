@@ -336,7 +336,7 @@ class SFTPInterface:
 
         label = ctk.CTkLabel(
             dialog,
-            text=f"Unknown host: {host}\nFingerprint: {fingerprint}\n\nTrust this server and add to known_hosts?",
+            text=f"Unknown host: {host}\nSHA256 fingerprint: {fingerprint}\n\nVerify this fingerprint with the server administrator before trusting.\nTrust this server and add to known_hosts?",
             wraplength=380
         )
         label.pack(padx=20, pady=20)

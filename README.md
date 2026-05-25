@@ -84,7 +84,10 @@ Do not commit generated or build-output files:
 Built installers and executables should be published as GitHub release assets instead of stored in the repository.
 
 - Use SSH key authentication when possible for better security.
-- The app saves host keys in `~/.ssh/known_hosts` and enforces secure permissions.
+- Host keys are verified and stored in `~/.ssh/known_hosts`; unknown hosts require explicit SHA256 fingerprint confirmation before trust is added.
+- The client restricts weak SSH ciphers, MACs, key exchange algorithms, and legacy `ssh-rsa` pubkey algorithms for stronger transport security.
+- Upload/download transfer integrity is verified with size checks and SHA-256 where feasible.
+- The app saves host keys in `~/.ssh/known_hosts` and enforces secure permissions when supported by the OS.
 - Large files are not previewed to avoid UI freezes.
 
 ## File structure
