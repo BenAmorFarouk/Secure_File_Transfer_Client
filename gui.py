@@ -8,6 +8,8 @@ class SFTPInterface:
         self.on_disconnect_callback: Optional[Callable] = None
         self.on_upload_callback: Optional[Callable] = None
         self.on_download_callback: Optional[Callable] = None
+        self.on_view_local_file_callback: Optional[Callable] = None
+        self.on_view_remote_file_callback: Optional[Callable] = None
         self.selected_local_file: Optional[str] = None
         self.selected_remote_file: Optional[str] = None
         self._build_ui()
@@ -82,6 +84,12 @@ class SFTPInterface:
         self.local_files.bind("<Double-Button-1>", self._on_local_file_double_click)
         self.local_files.bind("<ButtonRelease-1>", self._on_local_file_click)
 
+        # View file button
+        local_btn_frame = ctk.CTkFrame(local_files_section)
+        local_btn_frame.grid(row=2, column=0, sticky="ew", padx=2, pady=2)
+        self.view_local_btn = ctk.CTkButton(local_btn_frame, text="View File", height=30, command=self._on_view_local_file)
+        self.view_local_btn.pack(side="left", padx=2)
+
         # Action buttons
         btn_frame = ctk.CTkFrame(main_frame, width=120)
         btn_frame.grid(row=0, column=1, padx=6)
@@ -121,6 +129,12 @@ class SFTPInterface:
         self.remote_files.grid(row=1, column=0, sticky="nsew", padx=2, pady=(0, 4))
         self.remote_files.bind("<Double-Button-1>", self._on_remote_file_double_click)
         self.remote_files.bind("<ButtonRelease-1>", self._on_remote_file_click)
+
+        # View file button
+        remote_btn_frame = ctk.CTkFrame(remote_files_section)
+        remote_btn_frame.grid(row=2, column=0, sticky="ew", padx=2, pady=2)
+        self.view_remote_btn = ctk.CTkButton(remote_btn_frame, text="View File", height=30, command=self._on_view_remote_file)
+        self.view_remote_btn.pack(side="left", padx=2)
 
         # Log
         ctk.CTkLabel(self.root, text="Log", font=("Segoe UI", 12, "bold"), anchor="w").pack(fill="x", padx=15, pady=(0, 2))
@@ -306,3 +320,45 @@ class SFTPInterface:
 
         dialog.wait_window()
         return result["trust"]
+
+    def _on_view_local_file(self):
+        """Handle View File button click"""
+        if self.on_view_local_file_callback:
+            self.on_view_local_file_callback()
+
+    def _on_view_remote_file(self):
+        """Handle View Remote File button click"""
+        if self.on_view_remote_file_callback:
+            self.on_view_remote_file_callback()
+
+    def show_file_viewer(self, filename: str, content: str):
+        """Display file content in a popup window"""
+        viewer = ctk.CTkToplevel(self.root)
+        viewer.title(f"View: {filename}")
+        viewer.geometry("800x600")
+
+        # Header with filename
+        header = ctk.CTkFrame(viewer)
+        header.pack(fill="x", padx=10, pady=10)
+        ctk.CTkLabel(header, text=f"File: {filename}", font=("Segoe UI", 12, "bold")).pack(anchor="w")
+
+        # Content textbox
+        content_text = ctk.CTkTextbox(viewer, font=("Consolas", 10), wrap="word")
+        content_text.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        content_text.insert("0.0", content)
+        content_text.configure(state="disabled")  # Read-only
+
+        # Button frame
+        btn_frame = ctk.CTkFrame(viewer)
+        btn_frame.pack(fill="x", padx=10, pady=(0, 10))
+
+        def on_close():
+            viewer.destroy()
+
+        def on_copy():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(content)
+            self.log("Content copied to clipboard")
+
+        ctk.CTkButton(btn_frame, text="Copy", command=on_copy).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Close", command=on_close).pack(side="left", padx=5)

@@ -69,3 +69,20 @@ class LocalFileSystem:
     def get_full_path(self) -> str:
         """Get the current folder path as string"""
         return str(self.current_folder)
+
+    def read_file_content(self, filename: str) -> str:
+        """Read the content of a file. Returns content or error message."""
+        try:
+            file_path = self.current_folder / filename
+            if not file_path.is_file():
+                return f"Error: {filename} is not a file"
+            
+            # Try to read as text first
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                    content = f.read()
+                return content
+            except Exception as e:
+                return f"Error reading file: {str(e)}"
+        except Exception as e:
+            return f"Error: {str(e)}"

@@ -28,6 +28,8 @@ class SFTPApp:
         self.gui.on_disconnect_callback = self.disconnect
         self.gui.on_upload_callback = self.upload
         self.gui.on_download_callback = self.download
+        self.gui.on_view_local_file_callback = self.view_local_file
+        self.gui.on_view_remote_file_callback = self.view_remote_file
         self.gui._on_local_folder_select = self._local_folder_selected
         self.gui._on_remote_folder_select = self._remote_folder_selected
 
@@ -166,6 +168,32 @@ class SFTPApp:
             self._refresh_local()
         else:
             self.gui.log(f"Failed to download {filename}")
+
+    def view_local_file(self):
+        """Open and display the contents of a selected local file"""
+        filename = self.gui.get_selected_local_file()
+        if not filename:
+            self.gui.log("No local file selected. Click a file to select it first.")
+            return
+
+        content = self.local_fs.read_file_content(filename)
+        self.gui.show_file_viewer(filename, content)
+        self.gui.log(f"Opened: {filename}")
+
+    def view_remote_file(self):
+        """Open and display the contents of a selected remote file"""
+        if not self.remote_sftp.is_connected():
+            self.gui.log("Not connected to remote server")
+            return
+
+        filename = self.gui.get_selected_remote_file()
+        if not filename:
+            self.gui.log("No remote file selected. Click a file to select it first.")
+            return
+
+        content = self.remote_sftp.read_file_content(filename)
+        self.gui.show_file_viewer(filename, content)
+        self.gui.log(f"Opened: {filename}")
 
     def run(self):
         self.root.mainloop()

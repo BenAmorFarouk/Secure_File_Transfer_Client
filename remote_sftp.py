@@ -221,3 +221,18 @@ class RemoteSFTP:
         except Exception as e:
             print(f"[!] Download failed: {e}")
             return False
+
+    def read_file_content(self, filename: str) -> str:
+        """Read the content of a remote file. Returns content or error message."""
+        if not self.sftp:
+            return "Error: Not connected to remote server"
+        
+        try:
+            remote_path = f"{self.current_path.rstrip('/')}/{filename}"
+            
+            # Read the file from remote server
+            with self.sftp.file(remote_path, 'r') as f:
+                content = f.read().decode('utf-8', errors='replace')
+            return content
+        except Exception as e:
+            return f"Error reading file: {str(e)}"
