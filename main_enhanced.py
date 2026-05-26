@@ -20,8 +20,6 @@ class SFTPApp:
 
         self.local_file_names = []
         self.remote_file_names = []
-        self.trust_event = threading.Event()
-        self.trust_result = False
 
         self._setup_ui()
         self._refresh_local()
@@ -239,22 +237,24 @@ class SFTPApp:
             return
 
         username = self.user_entry.get().strip()
-        password_str = self.pass_entry.get()
+        password_bytes = bytearray(self.pass_entry.get().encode('utf-8'))
         self.pass_entry.delete(0, "end")
 
         if not host or not username:
             self._log_message("Host and username are required")
+            password_bytes[:] = bytearray(len(password_bytes))
             return
 
-        password_bytes = bytearray(password_str.encode('utf-8')) if password_str else bytearray()
+        self.connect_btn.configure(state="disabled")
 
         def connect_thread():
             try:
-                if self.remote_sftp.connect(host, port, username, password_str if password_str else None):
-                    self.root.after(0, lambda: self.connect_btn.configure(state="disabled"))
+                pw = password_bytes.decode('utf-8') if password_bytes else None
+                if self.remote_sftp.connect(host, port, username, pw):
                     self.root.after(0, lambda: self.disconnect_btn.configure(state="normal"))
                     self.root.after(0, lambda: self._refresh_remote())
                 else:
+                    self.root.after(0, lambda: self.connect_btn.configure(state="normal"))
                     self.root.after(0, lambda: self._log_message("Connection failed"))
             finally:
                 password_bytes[:] = bytearray(len(password_bytes))
@@ -400,8 +400,8 @@ class SFTPApp:
         log_to_widget(self.log_textbox, message)
 
     def _ask_trust_host(self, host, fingerprint):
-        self.trust_result = False
-        self.trust_event.clear()
+        trust_event = threading.Event()
+        trust_result = [False]
 
         def show_trust_dialog():
             trust_window = ctk.CTkToplevel(self.root)
@@ -412,13 +412,13 @@ class SFTPApp:
             ctk.CTkLabel(trust_window, text=f"SHA256: {fingerprint}", wraplength=450).pack(pady=10)
 
             def on_trust():
-                self.trust_result = True
+                trust_result[0] = True
                 trust_window.destroy()
-                self.trust_event.set()
+                trust_event.set()
 
             def on_reject():
                 trust_window.destroy()
-                self.trust_event.set()
+                trust_event.set()
 
             button_frame = ctk.CTkFrame(trust_window)
             button_frame.pack(pady=10)
@@ -427,8 +427,8 @@ class SFTPApp:
             ctk.CTkButton(button_frame, text="Reject", command=on_reject).pack(side="left", padx=5)
 
         self.root.after(0, show_trust_dialog)
-        self.trust_event.wait()
-        return self.trust_result
+        trust_event.wait()
+        return trust_result[0]
 
     def run(self):
         self.root.mainloop()
