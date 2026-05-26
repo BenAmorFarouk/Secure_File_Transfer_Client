@@ -40,23 +40,16 @@ Install with:
 pip install -r requirements.txt
 ```
 
-## 📚 Documentation
-
-- **[BUILD.md](docs/BUILD.md)** — Detailed build instructions
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** — Project structure and design
-- **[DEVELOPMENT.md](docs/DEVELOPMENT.md)** — Development guidelines
-
 ## 🏗️ Project Structure
-
-See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for complete project layout.
 
 Key files:
 - `run.py` — Application entry point
-- `main.py` — Core application logic
-- `gui.py` — User interface
-- `local_fs.py` — Local file operations
-- `remote_sftp.py` — SFTP operations
-- `utils.py` — Utility functions
+- `main_enhanced.py` — Core application logic with GUI
+- `local_fs.py` — Local file system operations
+- `remote_sftp.py` — SFTP connection and remote file operations
+- `utils.py` — Utility helper functions
+- `build.py` — Build script for creating standalone executable
+- `SecureSFTPClient.spec` — PyInstaller configuration
 
 ## 📦 Building & Distribution
 
@@ -69,8 +62,6 @@ python run.py
 1. Run: `python build.py`
 2. Share: `dist/SecureSFTPClient.exe`
 3. Users can run the .exe directly (no Python needed)
-
-See [BUILD.md](docs/BUILD.md) for details.
 
 ### GitHub Repository Contents
 Commit source code, scripts, assets, and documentation only.
@@ -94,9 +85,10 @@ Built installers and executables should be published as GitHub release assets in
 
 - `logo.png` – project logo for the repository and reference
 - `logo.ico` – Windows icon generated from `logo.png` for the executable
-- `run.py` – launcher script that starts the GUI
-- `main.py` – main application logic and event wiring
-- `gui.py` – GUI layout and user interaction handlers
+- `run.py` – launcher script that starts the application
+- `main_enhanced.py` – main application logic, GUI layout, and event handling
 - `local_fs.py` – local filesystem browsing and file preview
 - `remote_sftp.py` – secure SFTP connection and remote file operations
 - `utils.py` – helper functions
+- `build.py` – build script for creating standalone executable
+- `SecureSFTPClient.spec` – PyInstaller configuration for building the executable

@@ -1,4 +1,4 @@
 customtkinter>=5.0.0
 paramiko>=3.0.0
-pillow>=10.0.0  # Required for image handling (logo display)
-pyinstaller>=6.0.0  # Optional: needed only if you want to build the .exe
+pillow>=10.0.0
+pyinstaller>=6.0.0
