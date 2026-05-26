@@ -1,4 +1,4 @@
-from main import SFTPApp
+from main_enhanced import SFTPApp
 
 
 def main():

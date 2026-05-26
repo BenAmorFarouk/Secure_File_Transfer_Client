@@ -443,3 +443,43 @@ class RemoteSFTP:
                 return content
             except Exception as e:
                 return f"Error reading file: {str(e)}"
+
+    def delete_file(self, filename: str) -> bool:
+        """Delete a remote file."""
+        with self._lock:
+            if not self.sftp:
+                return False
+            sftp = self.sftp
+            try:
+                remote_path = self._join_remote_path(filename)
+                sftp.remove(remote_path)
+                self._log_info("Deleted file: %s", filename)
+                return True
+            except Exception as e:
+                self._log_warning("Failed to delete file %s: %s", filename, e)
+                return False
+
+    def create_folder(self, folder_name: str) -> bool:
+        """Create a new folder on the remote server."""
+        with self._lock:
+            if not self.sftp:
+                return False
+            sftp = self.sftp
+            try:
+                folder_name = folder_name.strip()
+                if not folder_name or folder_name in {".", ".."}:
+                    raise ValueError("Invalid folder name")
+                if "/" in folder_name or "\\" in folder_name:
+                    raise ValueError("Invalid folder name")
+
+                if self.current_path == "/":
+                    remote_path = f"/{folder_name}"
+                else:
+                    remote_path = posixpath.normpath(posixpath.join(self.current_path, folder_name))
+
+                sftp.mkdir(remote_path)
+                self._log_info("Created folder: %s", folder_name)
+                return True
+            except Exception as e:
+                self._log_warning("Failed to create folder %s: %s", folder_name, e)
+                return False
