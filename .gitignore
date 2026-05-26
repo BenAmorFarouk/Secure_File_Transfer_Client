@@ -29,6 +29,7 @@ dist/
 .idea/
 .vscode/
 .ruff_cache/
+.claude/
 
 # Installer and build artifacts
 installer/*.exe
