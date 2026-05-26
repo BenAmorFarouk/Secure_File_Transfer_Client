@@ -322,7 +322,7 @@ class RemoteSFTP:
                 folders.append("..")
             entries = sftp.listdir_attr(current_path)
             for attr in entries:
-                if (attr.st_mode & 0o040000) and not attr.filename.startswith('.'):
+                if (attr.st_mode & 0o040000):
                     folders.append(attr.filename)
             folders.sort(key=str.lower)
         except Exception as e:
@@ -340,7 +340,7 @@ class RemoteSFTP:
         try:
             entries = sftp.listdir_attr(current_path)
             for attr in entries:
-                if not (attr.st_mode & 0o040000) and not attr.filename.startswith('.'):
+                if not (attr.st_mode & 0o040000):
                     files.append((attr.filename, attr.st_size))
             files.sort(key=lambda x: x[0].lower())
         except Exception as e:

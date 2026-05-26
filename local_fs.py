@@ -11,10 +11,10 @@ class LocalFileSystem:
     def get_folders(self) -> List[str]:
         folders = []
         try:
-            if self.current_folder != self.current_folder.anchor:
+            if self.current_folder != Path(self.current_folder.anchor):
                 folders.append("..")
             for p in self.current_folder.iterdir():
-                if p.is_dir() and not p.name.startswith('.'):
+                if p.is_dir():
                     try:
                         if p.stat().st_mode & 0o400:
                             folders.append(p.name)
@@ -29,7 +29,7 @@ class LocalFileSystem:
         files = []
         try:
             for p in self.current_folder.iterdir():
-                if p.is_file() and not p.name.startswith('.'):
+                if p.is_file():
                     try:
                         if p.stat().st_mode & 0o400:
                             size = p.stat().st_size
