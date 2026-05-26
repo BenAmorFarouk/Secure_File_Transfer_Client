@@ -79,6 +79,7 @@ class SFTPApp:
         ctk.CTkLabel(left_frame, text="Files", font=("Arial", 10, "bold")).pack(anchor="w", pady=(5, 0))
         self.local_files_listbox = ctk.CTkTextbox(left_frame, height=8)
         self.local_files_listbox.pack(fill="both", expand=True)
+        self.local_files_listbox.bind("<Button-1>", self._on_local_file_click)
 
         right_frame = ctk.CTkFrame(content_frame)
         right_frame.pack(side="right", fill="both", expand=True, padx=(5, 0))
@@ -106,6 +107,7 @@ class SFTPApp:
         ctk.CTkLabel(right_frame, text="Files", font=("Arial", 10, "bold")).pack(anchor="w", pady=(5, 0))
         self.remote_files_listbox = ctk.CTkTextbox(right_frame, height=8)
         self.remote_files_listbox.pack(fill="both", expand=True)
+        self.remote_files_listbox.bind("<Button-1>", self._on_remote_file_click)
 
         log_frame = ctk.CTkFrame(main_frame)
         log_frame.pack(fill="both", expand=True, pady=(10, 0))
@@ -192,6 +194,26 @@ class SFTPApp:
             event.widget.config(cursor="hand2")
         except:
             pass
+
+    def _on_local_file_click(self, event):
+        text_widget = event.widget
+        index = text_widget.index(f"@{event.x},{event.y}")
+        line_num = index.split(".")[0]
+        line_start = f"{line_num}.0"
+        line_end = f"{line_num}.end"
+        text_widget.tag_remove("sel", "1.0", "end")
+        text_widget.tag_add("sel", line_start, line_end)
+        return "break"
+
+    def _on_remote_file_click(self, event):
+        text_widget = event.widget
+        index = text_widget.index(f"@{event.x},{event.y}")
+        line_num = index.split(".")[0]
+        line_start = f"{line_num}.0"
+        line_end = f"{line_num}.end"
+        text_widget.tag_remove("sel", "1.0", "end")
+        text_widget.tag_add("sel", line_start, line_end)
+        return "break"
 
     def _connect(self):
         host = self.host_entry.get().strip()
