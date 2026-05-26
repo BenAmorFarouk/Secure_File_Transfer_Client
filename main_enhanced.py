@@ -1,5 +1,7 @@
 import customtkinter as ctk
 import threading
+import os
+from pathlib import Path
 from local_fs import LocalFileSystem
 from remote_sftp import RemoteSFTP
 from utils import log_to_widget
@@ -15,6 +17,11 @@ class SFTPApp:
         self.remote_sftp = RemoteSFTP()
         self.remote_sftp.log_callback = self._log_message
         self.remote_sftp.ask_trust_callback = self._ask_trust_host
+
+        self.local_file_names = []
+        self.remote_file_names = []
+        self.trust_event = threading.Event()
+        self.trust_result = False
 
         self._setup_ui()
         self._refresh_local()
@@ -128,7 +135,9 @@ class SFTPApp:
 
         self.local_files_listbox.configure(state="normal")
         self.local_files_listbox.delete("1.0", "end")
+        self.local_file_names = []
         for filename, size in self.local_fs.get_files():
+            self.local_file_names.append(filename)
             self.local_files_listbox.insert("end", f"📄 {filename} ({size} bytes)\n")
         self.local_files_listbox.configure(state="disabled")
 
@@ -147,7 +156,9 @@ class SFTPApp:
 
         self.remote_files_listbox.configure(state="normal")
         self.remote_files_listbox.delete("1.0", "end")
+        self.remote_file_names = []
         for filename, size in self.remote_sftp.get_files():
+            self.remote_file_names.append(filename)
             self.remote_files_listbox.insert("end", f"📄 {filename} ({size} bytes)\n")
         self.remote_files_listbox.configure(state="disabled")
 
@@ -222,20 +233,31 @@ class SFTPApp:
         except ValueError:
             self._log_message("Invalid port number")
             return
+
+        if not (1 <= port <= 65535):
+            self._log_message("Port must be between 1 and 65535")
+            return
+
         username = self.user_entry.get().strip()
-        password = self.pass_entry.get()
+        password_str = self.pass_entry.get()
+        self.pass_entry.delete(0, "end")
 
         if not host or not username:
             self._log_message("Host and username are required")
             return
 
+        password_bytes = bytearray(password_str.encode('utf-8')) if password_str else bytearray()
+
         def connect_thread():
-            if self.remote_sftp.connect(host, port, username, password):
-                self.connect_btn.configure(state="disabled")
-                self.disconnect_btn.configure(state="normal")
-                self._refresh_remote()
-            else:
-                self._log_message("Connection failed")
+            try:
+                if self.remote_sftp.connect(host, port, username, password_str if password_str else None):
+                    self.root.after(0, lambda: self.connect_btn.configure(state="disabled"))
+                    self.root.after(0, lambda: self.disconnect_btn.configure(state="normal"))
+                    self.root.after(0, lambda: self._refresh_remote())
+                else:
+                    self.root.after(0, lambda: self._log_message("Connection failed"))
+            finally:
+                password_bytes[:] = bytearray(len(password_bytes))
 
         thread = threading.Thread(target=connect_thread, daemon=True)
         thread.start()
@@ -258,9 +280,13 @@ class SFTPApp:
             sel = text_widget.tag_ranges("sel")
             if sel:
                 start, end = sel[0], sel[1]
-                filename = text_widget.get(start, end).strip().replace("📄 ", "").split(" (")[0]
-                content = self.local_fs.read_file_content(filename)
-                self._show_preview(filename, content)
+                line_num = int(start.split(".")[0]) - 1
+                if 0 <= line_num < len(self.local_file_names):
+                    filename = self.local_file_names[line_num]
+                    content = self.local_fs.read_file_content(filename)
+                    self._show_preview(filename, content)
+                else:
+                    self._log_message("Invalid file selection")
             else:
                 self._log_message("Select a file to preview")
         except Exception as e:
@@ -276,9 +302,13 @@ class SFTPApp:
             sel = text_widget.tag_ranges("sel")
             if sel:
                 start, end = sel[0], sel[1]
-                filename = text_widget.get(start, end).strip().replace("📄 ", "").split(" (")[0]
-                content = self.remote_sftp.read_file_content(filename)
-                self._show_preview(filename, content)
+                line_num = int(start.split(".")[0]) - 1
+                if 0 <= line_num < len(self.remote_file_names):
+                    filename = self.remote_file_names[line_num]
+                    content = self.remote_sftp.read_file_content(filename)
+                    self._show_preview(filename, content)
+                else:
+                    self._log_message("Invalid file selection")
             else:
                 self._log_message("Select a file to preview")
         except Exception as e:
@@ -304,16 +334,21 @@ class SFTPApp:
             sel = text_widget.tag_ranges("sel")
             if sel:
                 start, end = sel[0], sel[1]
-                filename = text_widget.get(start, end).strip().replace("📄 ", "").split(" (")[0]
+                line_num = int(start.split(".")[0]) - 1
+                if not (0 <= line_num < len(self.local_file_names)):
+                    self._log_message("Invalid file selection")
+                    return
+
+                filename = self.local_file_names[line_num]
                 local_path = self.local_fs.get_selected_file(filename)
 
                 if local_path:
                     def upload_thread():
                         if self.remote_sftp.upload_file(local_path, filename):
-                            self._log_message(f"Uploaded {filename}")
-                            self._refresh_remote()
+                            self.root.after(0, lambda: self._log_message(f"Uploaded {filename}"))
+                            self.root.after(0, lambda: self._refresh_remote())
                         else:
-                            self._log_message(f"Failed to upload {filename}")
+                            self.root.after(0, lambda: self._log_message(f"Failed to upload {filename}"))
 
                     thread = threading.Thread(target=upload_thread, daemon=True)
                     thread.start()
@@ -334,15 +369,25 @@ class SFTPApp:
             sel = text_widget.tag_ranges("sel")
             if sel:
                 start, end = sel[0], sel[1]
-                filename = text_widget.get(start, end).strip().replace("📄 ", "").split(" (")[0]
-                local_path = self.local_fs.get_full_path() + "/" + filename
+                line_num = int(start.split(".")[0]) - 1
+                if not (0 <= line_num < len(self.remote_file_names)):
+                    self._log_message("Invalid file selection")
+                    return
+
+                filename = self.remote_file_names[line_num]
+                local_dir = Path(self.local_fs.get_full_path()).resolve()
+                local_path = (local_dir / filename).resolve()
+
+                if not str(local_path).startswith(str(local_dir)):
+                    self._log_message("Security error: path traversal detected")
+                    return
 
                 def download_thread():
-                    if self.remote_sftp.download_file(filename, local_path):
-                        self._log_message(f"Downloaded {filename}")
-                        self._refresh_local()
+                    if self.remote_sftp.download_file(filename, str(local_path)):
+                        self.root.after(0, lambda: self._log_message(f"Downloaded {filename}"))
+                        self.root.after(0, lambda: self._refresh_local())
                     else:
-                        self._log_message(f"Failed to download {filename}")
+                        self.root.after(0, lambda: self._log_message(f"Failed to download {filename}"))
 
                 thread = threading.Thread(target=download_thread, daemon=True)
                 thread.start()
@@ -355,30 +400,35 @@ class SFTPApp:
         log_to_widget(self.log_textbox, message)
 
     def _ask_trust_host(self, host, fingerprint):
-        trust_window = ctk.CTkToplevel(self.root)
-        trust_window.title("Trust Host?")
-        trust_window.geometry("500x200")
+        self.trust_result = False
+        self.trust_event.clear()
 
-        ctk.CTkLabel(trust_window, text=f"Unknown host: {host}", font=("Arial", 12, "bold")).pack(pady=10)
-        ctk.CTkLabel(trust_window, text=f"SHA256: {fingerprint}", wraplength=450).pack(pady=10)
+        def show_trust_dialog():
+            trust_window = ctk.CTkToplevel(self.root)
+            trust_window.title("Trust Host?")
+            trust_window.geometry("500x200")
 
-        result = {"trust": False}
+            ctk.CTkLabel(trust_window, text=f"Unknown host: {host}", font=("Arial", 12, "bold")).pack(pady=10)
+            ctk.CTkLabel(trust_window, text=f"SHA256: {fingerprint}", wraplength=450).pack(pady=10)
 
-        def on_trust():
-            result["trust"] = True
-            trust_window.destroy()
+            def on_trust():
+                self.trust_result = True
+                trust_window.destroy()
+                self.trust_event.set()
 
-        def on_reject():
-            trust_window.destroy()
+            def on_reject():
+                trust_window.destroy()
+                self.trust_event.set()
 
-        button_frame = ctk.CTkFrame(trust_window)
-        button_frame.pack(pady=10)
+            button_frame = ctk.CTkFrame(trust_window)
+            button_frame.pack(pady=10)
 
-        ctk.CTkButton(button_frame, text="Trust", command=on_trust).pack(side="left", padx=5)
-        ctk.CTkButton(button_frame, text="Reject", command=on_reject).pack(side="left", padx=5)
+            ctk.CTkButton(button_frame, text="Trust", command=on_trust).pack(side="left", padx=5)
+            ctk.CTkButton(button_frame, text="Reject", command=on_reject).pack(side="left", padx=5)
 
-        trust_window.wait_window()
-        return result["trust"]
+        self.root.after(0, show_trust_dialog)
+        self.trust_event.wait()
+        return self.trust_result
 
     def run(self):
         self.root.mainloop()

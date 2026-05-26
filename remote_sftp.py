@@ -471,6 +471,8 @@ class RemoteSFTP:
                     raise ValueError("Invalid folder name")
                 if "/" in folder_name or "\\" in folder_name:
                     raise ValueError("Invalid folder name")
+                if any(ord(c) < 32 for c in folder_name):
+                    raise ValueError("Invalid folder name")
 
                 if self.current_path == "/":
                     remote_path = f"/{folder_name}"
